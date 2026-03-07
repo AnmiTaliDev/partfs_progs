@@ -1,0 +1,7 @@
+build/
+builddir/
+*.part
+*.img
+*.o
+*.a
+subprojects/
