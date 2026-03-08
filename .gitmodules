@@ -1,0 +1,3 @@
+[submodule "driver/partfs-fuse"]
+	path = driver/partfs-fuse
+	url = https://github.com/AnmiTaliDev/partfs-fuse

@@ -1,0 +1,223 @@
+.\" PartFS - partfs-progs
+.\" man/mkfs.part.8
+.\"
+.\" Copyright (c) 2026 AnmiTaliDev <anmitalidev@nuros.org>
+.\" SPDX-License-Identifier: GPL-2.0-only
+.\"
+.TH MKFS.PART 8 "2026" "partfs-progs 0.1.0" "System Administration"
+.\"
+.SH NAME
+mkfs.part \- create a PartFS filesystem
+.\"
+.SH SYNOPSIS
+.B mkfs.part
+.RB [ \-L
+.IR label ]
+.RB [ \-j
+.IR journal_blocks ]
+.I device
+.br
+.B mkfs.part
+.B \-\-version
+.\"
+.SH DESCRIPTION
+.B mkfs.part
+initialises a
+.B PartFS
+filesystem on
+.IR device ,
+which may be a block device (e.g.\&
+.IR /dev/sdb )
+or a regular file containing a disk image.
+.PP
+PartFS is a 64-bit, little-endian, extent-based filesystem with CRC32C
+checksums on all metadata blocks, a write-ahead journal for crash recovery,
+and an FNV-1a\-keyed B-tree directory index.
+It carries no Microsoft LFN patents and is designed as a modern replacement
+for FAT32/vFAT.
+.PP
+The following on-disk structures are written by
+.BR mkfs.part :
+.TP
+.B Superblock (LBA 0) + backup (LBA 1)
+Volume metadata: magic, version, UUID, label, block count, journal location,
+and CRC32C over the first 124 bytes.
+.TP
+.B Journal header (LBA 2) + mirror (LBA 3)
+Write-ahead journal state set to
+.IR clean .
+Both copies are identical except for their self-referencing
+.I block_no
+field.
+.TP
+.B Journal data area (LBA 4 \[en] LBA 4+N\-1)
+.I N
+zero-filled blocks, where
+.I N
+is the journal size in blocks.
+Zeroed quickly using
+.BR fallocate (2)
+with
+.B FALLOC_FL_ZERO_RANGE
+when the target is a regular file; falls back to explicit writes otherwise.
+.TP
+.B Block groups
+Each group covers up to 32768 blocks (~128\ MiB).
+Group 0 starts at LBA\ 4+N and contains:
+.RS
+.IP \(bu 2
+Group descriptor (1 block)
+.IP \(bu 2
+Allocation bitmap (4 blocks, marks 7 blocks as used)
+.IP \(bu 2
+Inode B-tree leaf with root inode #1
+.IP \(bu 2
+Root directory data block (B-tree leaf with
+.B .
+and
+.B ..
+entries)
+.RE
+.RS
+.PP
+Groups 1+ contain only a group descriptor and allocation bitmap (5 blocks
+marked as used).
+.RE
+.\"
+.SH OPTIONS
+.TP
+.BI \-L " label"
+Set the volume label.
+.I label
+is a UTF-8 string of up to 32 bytes.
+If omitted, the label field is left blank (all zeros).
+.TP
+.BI \-j " journal_blocks"
+Set the journal size in blocks.
+Each block is 4096\ bytes.
+.I journal_blocks
+must be a positive integer no greater than 4294967295.
+.br
+Default:
+.B 1024
+(4\ MiB).
+.TP
+.B \-\-version
+Print the program version and exit.
+.\"
+.SH "MINIMUM DEVICE SIZE"
+The device must hold at least
+.IP
+.I journal_blocks
++ 11 blocks
+.PP
+in total.  For the default journal of 1024 blocks this is
+.B 1035 blocks (approximately 4\ MiB).
+.PP
+The layout is:
+.PP
+.TS
+l l.
+LBA 0	Primary superblock
+LBA 1	Backup superblock
+LBA 2	Journal header (primary)
+LBA 3	Journal header (mirror)
+LBA 4 \[en] 4+N\-1	Journal data (\fIN\fP blocks)
+LBA 4+N \[en] end	Block groups
+.TE
+.\"
+.SH "ON-DISK FORMAT"
+All multi-byte integers are stored in
+.B little-endian
+byte order.
+.PP
+Every metadata block begins with a
+.B partfs_block_hdr
+(16\ bytes):
+.PP
+.TS
+l l l.
+Offset	Size	Field
+_
+0	4	magic
+4	4	CRC32C (field zeroed during computation)
+8	8	block_no (self-referencing LBA)
+.TE
+.PP
+Directory entries use FNV-1a 64-bit hashing (offset basis 14695981039346656037,
+prime 1099511628211).
+Extent descriptors encode physical block addresses in 48-bit little-endian
+format (6\ bytes).
+.PP
+For the complete on-disk format specification see
+.IR driver/partfs-fuse/docs/on-disk-format.md .
+.\"
+.SH "UUID GENERATION"
+.B mkfs.part
+reads 16 random bytes from
+.I /dev/urandom
+and applies the RFC\ 4122 version\ 4, variant\ 1 bit masks:
+.IP
+.nf
+uuid[6] = (uuid[6] & 0x0F) | 0x40
+uuid[8] = (uuid[8] & 0x3F) | 0x80
+.fi
+.\"
+.SH "EXIT STATUS"
+.TP
+.B 0
+The filesystem was created successfully.
+.TP
+.B 1
+An error occurred (invalid arguments, device too small, I/O failure, etc.).
+Error details are printed to standard error.
+.\"
+.SH EXAMPLES
+Format a block device with a label:
+.PP
+.RS
+.EX
+mkfs.part \-L "data" /dev/sdb
+.EE
+.RE
+.PP
+Create and format a 256\ MiB image file with the default journal:
+.PP
+.RS
+.EX
+truncate \-s 256M disk.img
+mkfs.part \-L "test" disk.img
+.EE
+.RE
+.PP
+Format with a smaller 256-block (1\ MiB) journal:
+.PP
+.RS
+.EX
+mkfs.part \-j 256 /dev/mmcblk0
+.EE
+.RE
+.\"
+.SH FILES
+.TP
+.I /dev/urandom
+Source of randomness for UUID generation.
+.\"
+.SH "SEE ALSO"
+.BR mkfs (8),
+.BR mkfs.ext4 (8),
+.BR mkfs.fat (8),
+.BR fallocate (2),
+.BR fsync (2)
+.\"
+.SH BUGS
+Report bugs at
+.UR https://github.com/AnmiTaliDev/partfs\-fuse
+.UE .
+.\"
+.SH AUTHOR
+AnmiTaliDev <anmitalidev@nuros.org>
+.\"
+.SH COPYRIGHT
+Copyright \(co 2026 AnmiTaliDev.
+Licensed under the MIT License.

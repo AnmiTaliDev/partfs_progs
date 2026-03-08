@@ -23,6 +23,7 @@ carries no Microsoft LFN patents.
 Requires: `meson`, `ninja`, a C11 compiler, Linux kernel headers.
 
 ```sh
+git submodule update --init
 meson setup build
 ninja -C build
 ```
@@ -62,6 +63,8 @@ truncate -s 256M disk.img
 mkfs.part -L "test" disk.img
 ```
 
+See `man mkfs.part` for the full reference.
+
 ## License
 
-Licensed under MIT — see [LICENSE](LICENSE).
+Licensed under GNU GPL 2.0 — see [LICENSE](LICENSE).
